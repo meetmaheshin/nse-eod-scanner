@@ -12,13 +12,20 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime, timedelta
 import logging
+import os
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('simple_predictions')
 
 # Path handling for both local and deployed environments
-BASE_DIR = Path(__file__).parent.parent  # Go up from web_views/ to scanner/
+if os.getcwd().endswith('web_views'):
+    # Running from web_views directory (local: python prediction_view_simple.py)
+    BASE_DIR = Path(__file__).parent.parent
+else:
+    # Running from root directory (Render: gunicorn web_views.prediction_view_simple:app)
+    BASE_DIR = Path.cwd()
+
 OUTPUT_DIR = BASE_DIR / 'eod_scanner_output'
 
 def find_latest_signals():
