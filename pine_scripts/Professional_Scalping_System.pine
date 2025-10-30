@@ -1,0 +1,307 @@
+//@version=5
+indicator("Professional Scalping System", shorttitle="Scalping Pro", overlay=true, max_labels_count=100, max_lines_count=50, max_boxes_count=20)
+
+// ==================================================================================
+// SCALPING SYSTEM - COMPLETE TRADING SETUP
+// ==================================================================================
+
+// Core Settings
+string SCALP_GROUP = "🎯 Scalping Settings"
+string RISK_GROUP = "💰 Risk Management"
+string DISPLAY_GROUP = "📊 Display Options"
+
+// Scalping Parameters (Fast-paced trading)
+ema_fast = input.int(5, "Fast EMA", minval=3, maxval=15, group=SCALP_GROUP)
+ema_slow = input.int(13, "Slow EMA", minval=10, maxval=30, group=SCALP_GROUP)
+rsi_len = input.int(9, "RSI Length", minval=5, maxval=21, group=SCALP_GROUP)
+volume_mult = input.float(1.5, "Volume Multiplier", minval=1.0, maxval=3.0, step=0.1, group=SCALP_GROUP)
+atr_len = input.int(10, "ATR Length", minval=5, maxval=20, group=SCALP_GROUP)
+
+// Risk Management
+risk_reward = input.float(2.0, "Risk:Reward Ratio", minval=1.0, maxval=5.0, step=0.5, group=RISK_GROUP)
+atr_stop_mult = input.float(1.2, "Stop Loss ATR Multiplier", minval=0.5, maxval=3.0, step=0.1, group=RISK_GROUP)
+risk_amount = input.float(1000, "Risk Amount (₹)", minval=100, maxval=50000, group=RISK_GROUP)
+
+// Signal Filters
+min_candle_size = input.float(0.3, "Min Candle Size (% of ATR)", minval=0.1, maxval=1.0, step=0.1, group=SCALP_GROUP)
+signal_cooldown = input.int(3, "Signal Cooldown Bars", minval=1, maxval=10, group=SCALP_GROUP)
+
+// Display Options
+show_levels = input.bool(true, "Show Support/Resistance", group=DISPLAY_GROUP)
+show_signals = input.bool(true, "Show Entry Signals", group=DISPLAY_GROUP)
+show_targets = input.bool(true, "Show Stop/Target Lines", group=DISPLAY_GROUP)
+show_info = input.bool(true, "Show Trading Info", group=DISPLAY_GROUP)
+
+// ==================================================================================
+// TECHNICAL CALCULATIONS
+// ==================================================================================
+
+// EMAs (Primary trend filter)
+ema5 = ta.ema(close, ema_fast)
+ema13 = ta.ema(close, ema_slow)
+
+// RSI (Momentum filter)
+rsi = ta.rsi(close, rsi_len)
+
+// ATR (Volatility and position sizing)
+atr = ta.atr(atr_len)
+
+// Volume (Confirmation filter)
+vol_avg = ta.sma(volume, 20)
+vol_ratio = volume / vol_avg
+
+// VWAP (Institutional levels)
+vwap = ta.vwap(hlc3)
+
+// Support/Resistance (Key levels for scalping)
+resistance_5m = ta.highest(high, 20)  // 20-bar high
+support_5m = ta.lowest(low, 20)      // 20-bar low
+
+// Price action patterns
+candle_body = math.abs(close - open)
+candle_range = high - low
+body_ratio = candle_range > 0 ? candle_body / candle_range : 0
+
+// ==================================================================================
+// SCALPING SIGNAL LOGIC
+// ==================================================================================
+
+// Trend Direction (Must be clear for scalping)
+uptrend = ema5 > ema13 and close > vwap
+downtrend = ema5 < ema13 and close < vwap
+
+// Momentum Conditions (RSI not in extremes)
+rsi_bullish = rsi > 45 and rsi < 75  // Not oversold, not overbought
+rsi_bearish = rsi > 25 and rsi < 55  // Not overbought, not oversold
+
+// Volume Confirmation (Institutional interest)
+volume_surge = vol_ratio >= volume_mult
+
+// Price Action (Strong candles only)
+strong_bull_candle = close > open and body_ratio > min_candle_size and close > (open + candle_range * 0.6)
+strong_bear_candle = close < open and body_ratio > min_candle_size and close < (open - candle_range * 0.6)
+
+// EMA Cross Signals (Entry triggers)
+ema_cross_up = ta.crossover(ema5, ema13)
+ema_cross_down = ta.crossunder(ema5, ema13)
+
+// Pullback Signals (Better entries)
+pullback_long = uptrend and close <= ema13 and close > ema13[1]  // Pullback to EMA13 in uptrend
+pullback_short = downtrend and close >= ema13 and close < ema13[1]  // Pullback to EMA13 in downtrend
+
+// VWAP Bounce (Institutional support/resistance)
+vwap_bounce_long = close < vwap and close > vwap[1] and uptrend
+vwap_bounce_short = close > vwap and close < vwap[1] and downtrend
+
+// Signal Cooldown (Prevent spam)
+var int bars_since_signal = 0
+bars_since_signal := bars_since_signal + 1
+
+// ==================================================================================
+// FINAL SCALPING SIGNALS
+// ==================================================================================
+
+// Long Signals (Multiple entry types)
+long_breakout = ema_cross_up and rsi_bullish and volume_surge and strong_bull_candle
+long_pullback = pullback_long and rsi_bullish and volume_surge and strong_bull_candle
+long_vwap = vwap_bounce_long and rsi_bullish and volume_surge
+
+long_signal = (long_breakout or long_pullback or long_vwap) and bars_since_signal >= signal_cooldown
+
+// Short Signals (Multiple entry types)  
+short_breakout = ema_cross_down and rsi_bearish and volume_surge and strong_bear_candle
+short_pullback = pullback_short and rsi_bearish and volume_surge and strong_bear_candle
+short_vwap = vwap_bounce_short and rsi_bearish and volume_surge
+
+short_signal = (short_breakout or short_pullback or short_vwap) and bars_since_signal >= signal_cooldown
+
+// Reset cooldown on signals
+if long_signal or short_signal
+    bars_since_signal := 0
+
+// ==================================================================================
+// RISK MANAGEMENT & POSITION SIZING
+// ==================================================================================
+
+// Stop Loss Calculation
+stop_distance = atr * atr_stop_mult
+long_stop = close - stop_distance
+short_stop = close + stop_distance
+
+// Target Calculation  
+target_distance = stop_distance * risk_reward
+long_target = close + target_distance
+short_target = close - target_distance
+
+// Position Sizing
+position_size = stop_distance > 0 ? math.floor(risk_amount / stop_distance) : 0
+
+// Track active positions
+var float active_entry = na
+var float active_stop = na
+var float active_target = na
+var bool in_long = false
+var bool in_short = false
+var int entry_bar = 0
+
+// Entry Management
+if long_signal and not in_long and not in_short
+    active_entry := close
+    active_stop := long_stop
+    active_target := long_target
+    in_long := true
+    in_short := false
+    entry_bar := bar_index
+
+if short_signal and not in_short and not in_long
+    active_entry := close
+    active_stop := short_stop
+    active_target := short_target
+    in_short := true
+    in_long := false
+    entry_bar := bar_index
+
+// Exit Management
+if in_long
+    if high >= active_target or low <= active_stop
+        in_long := false
+        active_entry := na
+        active_stop := na
+        active_target := na
+
+if in_short
+    if low <= active_target or high >= active_stop
+        in_short := false
+        active_entry := na
+        active_stop := na
+        active_target := na
+
+// ==================================================================================
+// PLOTTING & VISUALIZATION
+// ==================================================================================
+
+// EMAs
+plot(ema5, "EMA 5", color=color.blue, linewidth=2)
+plot(ema13, "EMA 13", color=color.orange, linewidth=2)
+plot(vwap, "VWAP", color=color.purple, linewidth=2)
+
+// Support/Resistance
+plot(show_levels ? resistance_5m : na, "Resistance", color=color.red, style=plot.style_stepline)
+plot(show_levels ? support_5m : na, "Support", color=color.green, style=plot.style_stepline)
+
+// Entry Signals
+plotshape(show_signals and long_signal, "Long Entry", shape.labelup, location.belowbar, 
+          color=color.green, text="LONG", textcolor=color.white, size=size.normal)
+plotshape(show_signals and short_signal, "Short Entry", shape.labeldown, location.abovebar, 
+          color=color.red, text="SHORT", textcolor=color.white, size=size.normal)
+
+// Active Position Levels
+plot(show_targets and not na(active_stop) ? active_stop : na, "Stop Loss", 
+     color=color.red, linewidth=3, style=plot.style_circles)
+plot(show_targets and not na(active_target) ? active_target : na, "Target", 
+     color=color.green, linewidth=3, style=plot.style_circles)
+
+// Entry Line
+plot(show_targets and not na(active_entry) ? active_entry : na, "Entry", 
+     color=color.blue, linewidth=2, style=plot.style_cross)
+
+// Background Trend Color
+bgcolor(uptrend ? color.new(color.green, 97) : downtrend ? color.new(color.red, 97) : na)
+
+// ==================================================================================
+// INFORMATION PANEL
+// ==================================================================================
+
+if show_info and barstate.islast
+    var table info_table = table.new(position.top_right, 2, 10, bgcolor=color.white, border_width=1)
+    
+    // Headers
+    table.cell(info_table, 0, 0, "SCALPING DASHBOARD", bgcolor=color.navy, text_color=color.white, text_size=size.normal)
+    table.cell(info_table, 1, 0, "STATUS", bgcolor=color.navy, text_color=color.white, text_size=size.normal)
+    
+    // Trend
+    table.cell(info_table, 0, 1, "Trend", text_size=size.small)
+    trend_text = uptrend ? "🟢 UP" : downtrend ? "🔴 DOWN" : "⚪ NEUTRAL"
+    table.cell(info_table, 1, 1, trend_text, text_size=size.small)
+    
+    // RSI
+    table.cell(info_table, 0, 2, "RSI", text_size=size.small)
+    rsi_color = rsi > 70 ? color.red : rsi < 30 ? color.lime : color.gray
+    table.cell(info_table, 1, 2, str.tostring(math.round(rsi)), text_color=rsi_color, text_size=size.small)
+    
+    // Volume
+    table.cell(info_table, 0, 3, "Volume", text_size=size.small)
+    vol_text = volume_surge ? "🔥 SURGE" : vol_ratio > 1.0 ? "✅ GOOD" : "⚠️ LOW"
+    table.cell(info_table, 1, 3, vol_text, text_size=size.small)
+    
+    // Position Status
+    table.cell(info_table, 0, 4, "Position", text_size=size.small)
+    pos_text = in_long ? "🟢 LONG" : in_short ? "🔴 SHORT" : "⚪ NONE"
+    table.cell(info_table, 1, 4, pos_text, text_size=size.small)
+    
+    // P&L (if in position)
+    if in_long or in_short
+        table.cell(info_table, 0, 5, "P&L", text_size=size.small)
+        pnl = in_long ? close - active_entry : in_short ? active_entry - close : 0
+        pnl_pct = active_entry > 0 ? (pnl / active_entry) * 100 : 0
+        pnl_color = pnl > 0 ? color.green : pnl < 0 ? color.red : color.gray
+        table.cell(info_table, 1, 5, str.tostring(math.round(pnl_pct, 2)) + "%", text_color=pnl_color, text_size=size.small)
+        
+        // Stop Distance
+        table.cell(info_table, 0, 6, "Stop Dist", text_size=size.small)
+        stop_dist = in_long ? close - active_stop : in_short ? active_stop - close : 0
+        stop_pct = active_entry > 0 ? (stop_dist / active_entry) * 100 : 0
+        table.cell(info_table, 1, 6, str.tostring(math.round(stop_pct, 2)) + "%", text_size=size.small)
+        
+        // Target Distance
+        table.cell(info_table, 0, 7, "Target Dist", text_size=size.small)
+        target_dist = in_long ? active_target - close : in_short ? close - active_target : 0
+        target_pct = active_entry > 0 ? (target_dist / active_entry) * 100 : 0
+        table.cell(info_table, 1, 7, str.tostring(math.round(target_pct, 2)) + "%", text_size=size.small)
+    
+    // Position Size
+    table.cell(info_table, 0, 8, "Position Size", text_size=size.small)
+    table.cell(info_table, 1, 8, str.tostring(position_size), text_size=size.small)
+    
+    // Risk Amount
+    table.cell(info_table, 0, 9, "Risk", text_size=size.small)
+    table.cell(info_table, 1, 9, "₹" + str.tostring(risk_amount), text_size=size.small)
+
+// ==================================================================================
+// ALERTS
+// ==================================================================================
+
+alertcondition(long_signal, title="Scalping LONG Entry", 
+               message="🟢 SCALPING LONG SIGNAL\nEntry: {{close}}\nStop: {{plot('Stop Loss')}}\nTarget: {{plot('Target')}}\nSize: " + str.tostring(position_size))
+
+alertcondition(short_signal, title="Scalping SHORT Entry", 
+               message="🔴 SCALPING SHORT SIGNAL\nEntry: {{close}}\nStop: {{plot('Stop Loss')}}\nTarget: {{plot('Target')}}\nSize: " + str.tostring(position_size))
+
+alertcondition(in_long and (high >= active_target), title="LONG Target Hit", 
+               message="🎯 LONG TARGET HIT - Take Profit!")
+
+alertcondition(in_short and (low <= active_target), title="SHORT Target Hit", 
+               message="🎯 SHORT TARGET HIT - Take Profit!")
+
+alertcondition(in_long and (low <= active_stop), title="LONG Stop Hit", 
+               message="🛑 LONG STOP LOSS HIT")
+
+alertcondition(in_short and (high >= active_stop), title="SHORT Stop Hit", 
+               message="🛑 SHORT STOP LOSS HIT")
+
+// ==================================================================================
+// PERFORMANCE METRICS
+// ==================================================================================
+
+// Signal Quality Indicator
+signal_quality = 0
+if uptrend or downtrend
+    signal_quality += 1
+if rsi_bullish or rsi_bearish
+    signal_quality += 1
+if volume_surge
+    signal_quality += 1
+
+plot(signal_quality, "Signal Quality", display=display.data_window)
+plot(vol_ratio, "Volume Ratio", display=display.data_window)
+plot(atr, "ATR", display=display.data_window)

@@ -1,0 +1,17 @@
+{
+  "universe": "NIFTY50",
+  "custom_symbols": [],
+  "period": "6mo",
+  "min_volume": 1000000,
+  "vol_surge_threshold": 1.3,
+  "rsi_oversold": 30,
+  "rsi_overbought": 70,
+  "cpr_narrow_percentile": 0.2,
+  "output_dir": "eod_scanner_output",
+  "max_retries": 3,
+  "retry_delay": 2,
+  "risk_per_trade": 5000,
+  "stop_atr_multiplier": 0.8,
+  "target_rr_ratio": 2.0,
+  "ibs_extreme_threshold": 0.2
+}

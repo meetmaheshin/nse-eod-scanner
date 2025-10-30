@@ -1,0 +1,472 @@
+//@version=6
+indicator("Elite Scalping System", shorttitle="Elite Scalp", overlay=true, max_labels_count=200, max_lines_count=100, max_boxes_count=50)
+
+// ==================================================================================
+// ELITE SCALPING SYSTEM - Professional Grade
+// Combines multiple proven scalping strategies with advanced risk management
+// ==================================================================================
+
+// Input Groups
+string STRATEGY_GROUP = "Strategy Settings"
+string RISK_GROUP = "Risk Management" 
+string FILTERS_GROUP = "Signal Filters"
+string DISPLAY_GROUP = "Display & Alerts"
+
+// ==================================================================================
+// CORE SCALPING PARAMETERS
+// ==================================================================================
+
+// Multi-Timeframe EMAs (The backbone of scalping)
+ema_fast = input.int(8, "Fast EMA", minval=3, maxval=21, group=STRATEGY_GROUP, tooltip="Ultra-fast trend detection")
+ema_medium = input.int(21, "Medium EMA", minval=13, maxval=50, group=STRATEGY_GROUP, tooltip="Trend confirmation")
+ema_slow = input.int(50, "Slow EMA", minval=34, maxval=100, group=STRATEGY_GROUP, tooltip="Major trend filter")
+
+// Momentum Oscillators
+rsi_period = input.int(14, "RSI Period", minval=7, maxval=21, group=STRATEGY_GROUP)
+stoch_k = input.int(14, "Stochastic %K", minval=10, maxval=20, group=STRATEGY_GROUP)
+stoch_d = input.int(3, "Stochastic %D", minval=3, maxval=5, group=STRATEGY_GROUP)
+
+// Volume Analysis
+volume_ma_period = input.int(20, "Volume MA Period", minval=10, maxval=50, group=STRATEGY_GROUP)
+volume_threshold = input.float(1.5, "Volume Surge Threshold", minval=1.0, maxval=3.0, step=0.1, group=STRATEGY_GROUP)
+
+// Price Action
+atr_period = input.int(14, "ATR Period", minval=10, maxval=21, group=STRATEGY_GROUP)
+min_body_ratio = input.float(0.6, "Min Body Ratio", minval=0.3, maxval=0.9, step=0.1, group=STRATEGY_GROUP, tooltip="Minimum candle body size")
+
+// ==================================================================================
+// ADVANCED RISK MANAGEMENT
+// ==================================================================================
+
+risk_reward_ratio = input.float(2.5, "Risk:Reward Ratio", minval=1.5, maxval=5.0, step=0.5, group=RISK_GROUP)
+max_risk_percent = input.float(1.0, "Max Risk %", minval=0.5, maxval=3.0, step=0.1, group=RISK_GROUP, tooltip="Max risk per trade")
+atr_stop_multiplier = input.float(1.5, "ATR Stop Multiplier", minval=1.0, maxval=3.0, step=0.1, group=RISK_GROUP)
+
+// Position Management
+trade_session_start = input.session("24x7", "Trading Session", group=RISK_GROUP, tooltip="Set to 24x7 for crypto, or 0930-1600 for US stocks")
+
+// ==================================================================================
+// SIGNAL FILTERS (Critical for scalping success)
+// ==================================================================================
+
+require_trend_alignment = input.bool(false, "Require Trend Alignment", group=FILTERS_GROUP, tooltip="All EMAs must align - Turn OFF for more signals")
+require_volume_confirmation = input.bool(false, "Require Volume Confirmation", group=FILTERS_GROUP, tooltip="Turn OFF for more signals")
+require_momentum_confirmation = input.bool(false, "Require Momentum Confirmation", group=FILTERS_GROUP, tooltip="Turn OFF for more signals")
+min_candle_size_atr = input.float(0.3, "Min Candle Size (ATR)", minval=0.1, maxval=1.0, step=0.1, group=FILTERS_GROUP)
+
+// Signal Quality Filters
+rsi_overbought = input.int(70, "RSI Overbought", minval=65, maxval=80, group=FILTERS_GROUP)
+rsi_oversold = input.int(30, "RSI Oversold", minval=20, maxval=35, group=FILTERS_GROUP)
+stoch_overbought = input.int(80, "Stoch Overbought", minval=75, maxval=90, group=FILTERS_GROUP)
+stoch_oversold = input.int(20, "Stoch Oversold", minval=10, maxval=25, group=FILTERS_GROUP)
+
+// ==================================================================================
+// DISPLAY & ALERT SETTINGS
+// ==================================================================================
+
+show_emas = input.bool(true, "Show EMAs", group=DISPLAY_GROUP)
+show_support_resistance = input.bool(true, "Show S/R Levels", group=DISPLAY_GROUP)
+show_signals = input.bool(true, "Show Entry Signals", group=DISPLAY_GROUP)
+show_risk_levels = input.bool(true, "Show Risk Levels", group=DISPLAY_GROUP)
+show_dashboard = input.bool(true, "Show Trading Dashboard", group=DISPLAY_GROUP)
+
+// Alert Settings
+enable_long_alerts = input.bool(true, "Enable Long Alerts", group=DISPLAY_GROUP)
+enable_short_alerts = input.bool(true, "Enable Short Alerts", group=DISPLAY_GROUP)
+enable_exit_alerts = input.bool(true, "Enable Exit Alerts", group=DISPLAY_GROUP)
+
+// ==================================================================================
+// TECHNICAL CALCULATIONS
+// ==================================================================================
+
+// Moving Averages (The foundation)
+ema_8 = ta.ema(close, ema_fast)
+ema_21 = ta.ema(close, ema_medium) 
+ema_50 = ta.ema(close, ema_slow)
+
+// VWAP (Institutional levels)
+vwap_value = ta.vwap(hlc3)
+vwap_upper = vwap_value + ta.stdev(hlc3, 20)
+vwap_lower = vwap_value - ta.stdev(hlc3, 20)
+
+// Momentum Indicators
+rsi = ta.rsi(close, rsi_period)
+stoch_k_value = ta.stoch(close, high, low, stoch_k)
+stoch_d_value = ta.sma(stoch_k_value, stoch_d)
+
+// Volume Analysis
+volume_ma = ta.sma(volume, volume_ma_period)
+volume_ratio = volume / volume_ma
+high_volume = volume_ratio >= volume_threshold
+
+// Volatility
+atr = ta.atr(atr_period)
+bb_basis = ta.sma(close, 20)
+bb_dev = ta.stdev(close, 20)
+bb_upper = bb_basis + bb_dev * 2
+bb_lower = bb_basis - bb_dev * 2
+
+// Price Action Analysis
+candle_body = math.abs(close - open)
+candle_range = high - low
+body_ratio = candle_range > 0 ? candle_body / candle_range : 0
+strong_candle = body_ratio >= min_body_ratio and candle_range >= (atr * min_candle_size_atr)
+
+// Market Structure
+swing_high = ta.pivothigh(high, 5, 5)
+swing_low = ta.pivotlow(low, 5, 5)
+resistance_level = ta.valuewhen(not na(swing_high), high, 0)
+support_level = ta.valuewhen(not na(swing_low), low, 0)
+
+// ==================================================================================
+// TREND ANALYSIS (Multi-timeframe approach)
+// ==================================================================================
+
+// Primary Trend (EMA alignment)
+bullish_alignment = ema_8 > ema_21 and ema_21 > ema_50
+bearish_alignment = ema_8 < ema_21 and ema_21 < ema_50
+trend_aligned = bullish_alignment or bearish_alignment
+
+// Trend Strength
+trend_strength = math.abs(ema_8 - ema_50) / ema_50 * 100
+strong_trend = trend_strength > 1.0
+
+// VWAP Position
+above_vwap = close > vwap_value
+below_vwap = close < vwap_value
+vwap_trend_bullish = above_vwap and bullish_alignment
+vwap_trend_bearish = below_vwap and bearish_alignment
+
+// ==================================================================================
+// MOMENTUM ANALYSIS
+// ==================================================================================
+
+// RSI Conditions
+rsi_bullish = rsi > 50 and rsi < rsi_overbought
+rsi_bearish = rsi < 50 and rsi > rsi_oversold
+rsi_neutral = rsi >= 40 and rsi <= 60
+
+// Stochastic Conditions  
+stoch_bullish = stoch_k_value > stoch_d_value and stoch_k_value < stoch_overbought
+stoch_bearish = stoch_k_value < stoch_d_value and stoch_k_value > stoch_oversold
+
+// Combined Momentum
+momentum_bullish = rsi_bullish and stoch_bullish
+momentum_bearish = rsi_bearish and stoch_bearish
+momentum_aligned = momentum_bullish or momentum_bearish
+
+// ==================================================================================
+// CROSSOVER CALCULATIONS (Global variables for consistency)
+// ==================================================================================
+
+// EMA Crossover calculations
+ema_cross_up = ta.crossover(ema_8, ema_21)
+ema_cross_down = ta.crossunder(ema_8, ema_21)
+
+// ==================================================================================
+// ENTRY SIGNAL LOGIC (Multiple strategies combined)
+// ==================================================================================
+
+// Strategy 1: EMA Crossover with Momentum
+ema_cross_long = ema_cross_up and bullish_alignment
+ema_cross_short = ema_cross_down and bearish_alignment
+
+// Strategy 2: Pullback to EMA with Volume
+pullback_long = close < ema_21 and close > ema_21[1] and bullish_alignment and high_volume
+pullback_short = close > ema_21 and close < ema_21[1] and bearish_alignment and high_volume
+
+// Strategy 3: VWAP Bounce
+vwap_bounce_long = close <= vwap_lower and close > vwap_lower[1] and bullish_alignment
+vwap_bounce_short = close >= vwap_upper and close < vwap_upper[1] and bearish_alignment
+
+// Strategy 4: Support/Resistance Break
+resistance_break = close > resistance_level and close[1] <= resistance_level and bullish_alignment
+support_break = close < support_level and close[1] >= support_level and bearish_alignment
+
+// Strategy 5: Bollinger Band Squeeze Breakout
+bb_squeeze = (bb_upper - bb_lower) / bb_basis < 0.1
+bb_break_long = close > bb_upper and bb_squeeze[1] and bullish_alignment
+bb_break_short = close < bb_lower and bb_squeeze[1] and bearish_alignment
+
+// ==================================================================================
+// SIGNAL VALIDATION & FILTERS
+// ==================================================================================
+
+// Session Filter
+in_session = not na(time(timeframe.period, trade_session_start))
+
+// Trend Filter
+trend_filter_long = not require_trend_alignment or vwap_trend_bullish
+trend_filter_short = not require_trend_alignment or vwap_trend_bearish
+
+// Volume Filter
+volume_filter = not require_volume_confirmation or high_volume
+
+// Momentum Filter  
+momentum_filter_long = not require_momentum_confirmation or momentum_bullish
+momentum_filter_short = not require_momentum_confirmation or momentum_bearish
+
+// Price Action Filter
+price_action_filter = strong_candle
+
+// ==================================================================================
+// FINAL SIGNAL GENERATION
+// ==================================================================================
+
+// Combine all long strategies
+long_entry_signals = (ema_cross_long or pullback_long or vwap_bounce_long or resistance_break or bb_break_long)
+
+// Combine all short strategies  
+short_entry_signals = (ema_cross_short or pullback_short or vwap_bounce_short or support_break or bb_break_short)
+
+// Apply all filters
+long_signal = long_entry_signals and trend_filter_long and volume_filter and momentum_filter_long and price_action_filter and in_session
+short_signal = short_entry_signals and trend_filter_short and volume_filter and momentum_filter_short and price_action_filter and in_session
+
+// ==================================================================================
+// POSITION MANAGEMENT
+// ==================================================================================
+
+// Calculate position sizes and levels
+entry_price = close
+stop_distance = atr * atr_stop_multiplier
+target_distance = stop_distance * risk_reward_ratio
+
+// Long position levels
+long_entry = entry_price
+long_stop = long_entry - stop_distance  
+long_target1 = long_entry + target_distance * 0.6  // Partial profit
+long_target2 = long_entry + target_distance  // Full target
+
+// Short position levels
+short_entry = entry_price
+short_stop = short_entry + stop_distance
+short_target1 = short_entry - target_distance * 0.6
+short_target2 = short_entry - target_distance  
+
+// Position sizing
+account_balance = 100000  // Adjust as needed
+risk_amount = account_balance * (max_risk_percent / 100)
+position_size_long = math.floor(risk_amount / stop_distance)
+position_size_short = math.floor(risk_amount / stop_distance)
+
+// ==================================================================================
+// ACTIVE TRADE TRACKING
+// ==================================================================================
+
+var float active_long_entry = na
+var float active_long_stop = na  
+var float active_long_target1 = na
+var float active_long_target2 = na
+var bool long_position_active = false
+var bool long_partial_closed = false
+
+var float active_short_entry = na
+var float active_short_stop = na
+var float active_short_target1 = na  
+var float active_short_target2 = na
+var bool short_position_active = false
+var bool short_partial_closed = false
+
+// Trade entry management
+if long_signal and not long_position_active and not short_position_active
+    active_long_entry := long_entry
+    active_long_stop := long_stop
+    active_long_target1 := long_target1
+    active_long_target2 := long_target2
+    long_position_active := true
+    long_partial_closed := false
+
+if short_signal and not short_position_active and not long_position_active  
+    active_short_entry := short_entry
+    active_short_stop := short_stop
+    active_short_target1 := short_target1
+    active_short_target2 := short_target2
+    short_position_active := true
+    short_partial_closed := false
+
+// Trade exit management
+if long_position_active
+    // Partial profit at target 1
+    if high >= active_long_target1 and not long_partial_closed
+        long_partial_closed := true
+        
+    // Full exit at target 2 or stop loss
+    if high >= active_long_target2 or low <= active_long_stop
+        long_position_active := false
+        active_long_entry := na
+        active_long_stop := na
+        active_long_target1 := na
+        active_long_target2 := na
+        long_partial_closed := false
+
+if short_position_active
+    // Partial profit at target 1
+    if low <= active_short_target1 and not short_partial_closed
+        short_partial_closed := true
+        
+    // Full exit at target 2 or stop loss  
+    if low <= active_short_target2 or high >= active_short_stop
+        short_position_active := false
+        active_short_entry := na
+        active_short_stop := na
+        active_short_target1 := na
+        active_short_target2 := na
+        short_partial_closed := false
+
+// ==================================================================================
+// VISUALIZATION
+// ==================================================================================
+
+// EMAs
+plot(show_emas ? ema_8 : na, "EMA 8", color=color.blue, linewidth=2)
+plot(show_emas ? ema_21 : na, "EMA 21", color=color.orange, linewidth=2)  
+plot(show_emas ? ema_50 : na, "EMA 50", color=color.red, linewidth=1)
+
+// VWAP
+plot(vwap_value, "VWAP", color=color.purple, linewidth=2)
+plot(vwap_upper, "VWAP Upper", color=color.purple, linewidth=1, style=plot.style_line)
+plot(vwap_lower, "VWAP Lower", color=color.purple, linewidth=1, style=plot.style_line)
+
+// Support/Resistance
+plot(show_support_resistance ? resistance_level : na, "Resistance", color=color.red, style=plot.style_line)
+plot(show_support_resistance ? support_level : na, "Support", color=color.green, style=plot.style_line)
+
+// Entry signals
+plotshape(show_signals and long_signal, "Long Entry", shape.labelup, location.belowbar, 
+          color=color.new(color.green, 0), text="BUY", textcolor=color.white, size=size.normal)
+plotshape(show_signals and short_signal, "Short Entry", shape.labeldown, location.abovebar,
+          color=color.new(color.red, 0), text="SELL", textcolor=color.white, size=size.normal)
+
+// Debug signals - Simple EMA crossovers (these will show more frequently)
+plotshape(show_signals and ema_cross_up, "EMA Cross Long", shape.triangleup, location.belowbar, 
+          color=color.new(color.blue, 50), text="↑", textcolor=color.white, size=size.small)
+plotshape(show_signals and ema_cross_down, "EMA Cross Short", shape.triangledown, location.abovebar,
+          color=color.new(color.orange, 50), text="↓", textcolor=color.white, size=size.small)
+
+// Active position levels
+plot(show_risk_levels and long_position_active ? active_long_stop : na, "Long Stop", 
+     color=color.red, linewidth=2, style=plot.style_line)
+plot(show_risk_levels and long_position_active ? active_long_target1 : na, "Long Target 1", 
+     color=color.green, linewidth=2, style=plot.style_line)
+plot(show_risk_levels and long_position_active ? active_long_target2 : na, "Long Target 2", 
+     color=color.green, linewidth=3, style=plot.style_line)
+
+plot(show_risk_levels and short_position_active ? active_short_stop : na, "Short Stop", 
+     color=color.red, linewidth=2, style=plot.style_line)  
+plot(show_risk_levels and short_position_active ? active_short_target1 : na, "Short Target 1", 
+     color=color.green, linewidth=2, style=plot.style_line)
+plot(show_risk_levels and short_position_active ? active_short_target2 : na, "Short Target 2", 
+     color=color.green, linewidth=3, style=plot.style_line)
+
+// Background trend indication
+trend_bg = bullish_alignment ? color.new(color.green, 95) : bearish_alignment ? color.new(color.red, 95) : na
+bgcolor(trend_bg, title="Trend Background")
+
+// ==================================================================================
+// TRADING DASHBOARD
+// ==================================================================================
+
+if show_dashboard and barstate.islast
+    var table dashboard = table.new(position.top_right, 3, 8, bgcolor=color.white, border_width=1)
+    
+    // Headers
+    table.cell(dashboard, 0, 0, "ELITE SCALPING", bgcolor=color.navy, text_color=color.white, text_size=size.normal)
+    table.cell(dashboard, 1, 0, "STATUS", bgcolor=color.navy, text_color=color.white, text_size=size.normal)
+    table.cell(dashboard, 2, 0, "VALUE", bgcolor=color.navy, text_color=color.white, text_size=size.normal)
+    
+    // Market condition
+    table.cell(dashboard, 0, 1, "Trend", text_size=size.small)
+    trend_text = bullish_alignment ? "BULLISH" : bearish_alignment ? "BEARISH" : "SIDEWAYS"
+    table.cell(dashboard, 1, 1, trend_text, text_size=size.small)
+    table.cell(dashboard, 2, 1, str.tostring(math.round(trend_strength, 2)) + "%", text_size=size.small)
+    
+    // RSI Status
+    table.cell(dashboard, 0, 2, "RSI", text_size=size.small)
+    rsi_text = rsi > rsi_overbought ? "OB" : rsi < rsi_oversold ? "OS" : "OK"
+    table.cell(dashboard, 1, 2, rsi_text, text_size=size.small)
+    table.cell(dashboard, 2, 2, str.tostring(math.round(rsi, 1)), text_size=size.small)
+    
+    // Volume
+    table.cell(dashboard, 0, 3, "Volume", text_size=size.small)
+    vol_text = high_volume ? "HIGH" : "NORMAL"
+    table.cell(dashboard, 1, 3, vol_text, text_size=size.small)
+    table.cell(dashboard, 2, 3, str.tostring(math.round(volume_ratio, 1)) + "x", text_size=size.small)
+    
+    // VWAP Position
+    table.cell(dashboard, 0, 4, "VWAP", text_size=size.small)
+    vwap_text = above_vwap ? "ABOVE" : "BELOW"
+    table.cell(dashboard, 1, 4, vwap_text, text_size=size.small)
+    vwap_dist = math.abs(close - vwap_value) / close * 100
+    table.cell(dashboard, 2, 4, str.tostring(math.round(vwap_dist, 2)) + "%", text_size=size.small)
+    
+    // Position Status
+    table.cell(dashboard, 0, 5, "Position", text_size=size.small)
+    pos_text = long_position_active ? "LONG" : short_position_active ? "SHORT" : "NONE"
+    table.cell(dashboard, 1, 5, pos_text, text_size=size.small)
+    
+    // P&L if in position
+    if long_position_active
+        pnl = (close - active_long_entry) / active_long_entry * 100
+        pnl_color = pnl > 0 ? color.green : color.red
+        table.cell(dashboard, 2, 5, str.tostring(math.round(pnl, 2)) + "%", text_color=pnl_color, text_size=size.small)
+    else if short_position_active
+        pnl = (active_short_entry - close) / active_short_entry * 100  
+        pnl_color = pnl > 0 ? color.green : color.red
+        table.cell(dashboard, 2, 5, str.tostring(math.round(pnl, 2)) + "%", text_color=pnl_color, text_size=size.small)
+    else
+        table.cell(dashboard, 2, 5, "0%", text_size=size.small)
+    
+    // Signal Quality
+    table.cell(dashboard, 0, 6, "Signal Quality", text_size=size.small)
+    dashboard_signal_score = 0
+    dashboard_signal_score += trend_aligned ? 1 : 0
+    dashboard_signal_score += momentum_aligned ? 1 : 0  
+    dashboard_signal_score += high_volume ? 1 : 0
+    dashboard_signal_score += strong_candle ? 1 : 0
+    quality_text = dashboard_signal_score >= 3 ? "HIGH" : dashboard_signal_score == 2 ? "MED" : "LOW"
+    table.cell(dashboard, 1, 6, quality_text, text_size=size.small)
+    table.cell(dashboard, 2, 6, str.tostring(dashboard_signal_score) + "/4", text_size=size.small)
+
+// ==================================================================================
+// ALERTS
+// ==================================================================================
+
+// Entry alerts
+alertcondition(long_signal and enable_long_alerts, title="ELITE SCALP LONG", message="ELITE SCALP LONG Entry at {{ticker}} Price: {{close}}")
+alertcondition(short_signal and enable_short_alerts, title="ELITE SCALP SHORT", message="ELITE SCALP SHORT Entry at {{ticker}} Price: {{close}}")
+
+// Exit alerts
+alertcondition(long_position_active and (high >= active_long_target2 or low <= active_long_stop) and enable_exit_alerts, 
+               title="LONG EXIT", message="LONG POSITION CLOSED at {{ticker}}")
+
+alertcondition(short_position_active and (low <= active_short_target2 or high >= active_short_stop) and enable_exit_alerts,
+               title="SHORT EXIT", message="SHORT POSITION CLOSED at {{ticker}}")
+
+// ==================================================================================
+// PERFORMANCE METRICS
+// ==================================================================================
+
+// Export key metrics for analysis
+plot(volume_ratio, "Volume Ratio", display=display.data_window, color=color.blue)
+plot(rsi, "RSI", display=display.data_window, color=color.purple)  
+plot(trend_strength, "Trend Strength", display=display.data_window, color=color.orange)
+
+// Debug information - shows why signals might not be triggering
+plot(in_session ? 1 : 0, "Session Active", display=display.data_window, color=color.gray)
+plot(trend_filter_long ? 1 : 0, "Trend Filter Long", display=display.data_window, color=color.green)
+plot(volume_filter ? 1 : 0, "Volume Filter", display=display.data_window, color=color.yellow)
+plot(momentum_filter_long ? 1 : 0, "Momentum Filter Long", display=display.data_window, color=color.purple)
+plot(price_action_filter ? 1 : 0, "Price Action Filter", display=display.data_window, color=color.orange)
+
+// Signal strength for performance analysis
+performance_signal_score = 0
+performance_signal_score += trend_aligned ? 1 : 0
+performance_signal_score += momentum_aligned ? 1 : 0  
+performance_signal_score += high_volume ? 1 : 0
+performance_signal_score += strong_candle ? 1 : 0
+plot(performance_signal_score, "Signal Score", display=display.data_window, color=color.gray)
+
+// Market efficiency indicator
+efficiency = math.abs(close - close[10]) / math.sum(ta.tr, 10)
+plot(efficiency, "Market Efficiency", display=display.data_window, color=color.yellow)
