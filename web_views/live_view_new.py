@@ -17,7 +17,9 @@ import logging
 import yfinance as yf
 from datetime import datetime
 
-OUTPUT_DIR = Path('eod_scanner_output')
+# Path handling for both local and deployed environments
+BASE_DIR = Path(__file__).parent.parent  # Go up from web_views/ to scanner/
+OUTPUT_DIR = BASE_DIR / 'eod_scanner_output'
 POLL_INTERVAL = 15  # seconds - increased to avoid Yahoo Finance rate limits
 
 app = Flask(__name__)

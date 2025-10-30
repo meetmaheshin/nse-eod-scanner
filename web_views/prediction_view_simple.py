@@ -17,7 +17,9 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('simple_predictions')
 
-OUTPUT_DIR = Path('eod_scanner_output')
+# Path handling for both local and deployed environments
+BASE_DIR = Path(__file__).parent.parent  # Go up from web_views/ to scanner/
+OUTPUT_DIR = BASE_DIR / 'eod_scanner_output'
 
 def find_latest_signals():
     """Find latest signal file"""
