@@ -16,9 +16,16 @@ import pandas as pd
 import logging
 import yfinance as yf
 from datetime import datetime
+import os
 
 # Path handling for both local and deployed environments
-BASE_DIR = Path(__file__).parent.parent  # Go up from web_views/ to scanner/
+if os.getcwd().endswith('web_views'):
+    # Running from web_views directory (local: python live_view_new.py)
+    BASE_DIR = Path(__file__).parent.parent
+else:
+    # Running from root directory (Render: gunicorn web_views.live_view_new:app)
+    BASE_DIR = Path.cwd()
+
 OUTPUT_DIR = BASE_DIR / 'eod_scanner_output'
 POLL_INTERVAL = 15  # seconds - increased to avoid Yahoo Finance rate limits
 
