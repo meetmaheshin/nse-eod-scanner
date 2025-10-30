@@ -19,12 +19,13 @@ env/
 ml_models/*.pkl
 logs/*.log
 logs/*.csv
-eod_scanner_output/*.csv
 
 # Keep folder structure
 !eod_scanner_output/.gitkeep
 !ml_models/.gitkeep
 !logs/.gitkeep
+
+# Note: CSV files in eod_scanner_output/ are now tracked for deployment
 
 # IDE
 .vscode/
